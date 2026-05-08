@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Neural Pro - Fullscreen</title>
+  <style>
+    :root {
+      --bg-1: #f0f2f5;
+      --bg-2: #dfe4ea;
+      --ink: #1e272e;
+      --line: rgba(0, 0, 0, 0.1);
+      --accent: #218c74;
+      --accent-2: #227093;
+      --waiting: #f39c12;
+      --n1: #2e86de;
+      --n2: #20bf6b;
+      --n3: #f39c12;
+      --n4: #eb3b5a;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      font-family: 'Segoe UI', sans-serif;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .panel {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    .row { display: flex; gap: 8px; align-items: center; }
+
+    .btn-num {
+      flex: 1;
+      height: 5%;
+      font-size: 1.3rem;
+      border: 2px solid rgba(0, 0, 0, 0.12);
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: bold;
+      color: #fff;
+      transition: all 0.2s;
+    }
+    .btn-num:active { transform: scale(0.95); background: #f1f2f6; }
+
+    .num-btn-1 { background: var(--n1); }
+    .num-btn-2 { background: var(--n2); }
+    .num-btn-3 { background: var(--n3); }
+    .num-btn-4 { background: var(--n4); }
+
+    .action-btn { border: 0; border-radius: 8px; padding: 10px 16px; color: #fff; cursor: pointer; font-weight: bold; }
+    .btn-blue { background: var(--accent-2); }
+    .btn-clear { background: #b33939; }
+    .btn-fullscreen { background: #4b4b4b; }
+
+    .neural-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      padding: 10px;
+      border-radius: 8px;
+      background: rgba(0,0,0,0.03);
+    }
+
+    .last-numbers-row {
+      display: flex;
+      gap: 6px;
+      margin: 8px 0;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    .num-ball {
+      width: 28px;
+      height: 28px;
+      background: var(--accent-2);
+      color: white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: bold;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    #prediction { font-size: 15px; font-weight: bold; color: var(--waiting); }
+    .history-tag { font-size: 11px; color: #747d8c; }
+
+    .pick-badge {
+      display: inline-block;
+      min-width: 28px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      text-align: center;
+      color: #fff;
+      font-weight: 700;
+      line-height: 1.2;
+      vertical-align: middle;
+    }
+
+    .num-1 { background: var(--n1); }
+    .num-2 { background: var(--n2); }
+    .num-3 { background: var(--n3); }
+    .num-4 { background: var(--n4); }
+
+    .bet-small { background: #2d98da; }
+    .bet-big { background: #3867d6; }
+    .bet-odd { background: #8854d0; }
+    .bet-even { background: #0fb9b1; }
+
+    iframe {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      flex: 1;
+      min-height: 0;
+      display: block;
+    }
+
+    input { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+
+      #topPanel {
+        position: fixed;
+        top: 8px;
+        left: 8px;
+        width: min(900px, calc(100vw - 16px));
+        z-index: 1000;
+        padding: 8px;
+        backdrop-filter: blur(3px);
+      }
+
+      #dragHandle {
+        font-size: 12px;
+        color: #57606f;
+        text-align: center;
+        padding: 4px 8px 8px;
+        cursor: grab;
+        user-select: none;
+        touch-action: none;
+        font-weight: 600;
+      }
+
+      #dragHandle:active { cursor: grabbing; }
+
+      #bottomPanel {
+        flex: 1;
+        min-height: 0;
+        padding: 8px;
+        display: flex;
+        flex-direction: column;
+      }
+  </style>
+</head>
+<body id="appBody">
+
+  <section class="panel" id="topPanel">
+    <div id="dragHandle">Arraste este painel</div>
+    <div class="row">
+      <button class="btn-num num-btn-1" onclick="processInput(1)">1</button>
+      <button class="btn-num num-btn-2" onclick="processInput(2)">2</button>
+      <button class="btn-num num-btn-3" onclick="processInput(3)">3</button>
+      <button class="btn-num num-btn-4" onclick="processInput(4)">4</button>
+      <button class="action-btn btn-fullscreen" onclick="toggleFullscreen()">Tela Cheia</button>
+      <button class="action-btn btn-clear" onclick="resetEngine()">Reset</button>
+    </div>
+
+    <div class="last-numbers-row" id="ballsContainer"></div>
+    
+    <div class="neural-status">
+      <div id="prediction">Aguardando dados (mínimo 15)...</div>
+      <div id="betResult" style="font-size:15px; font-weight:bold; color: var(--accent-2); display:none;"></div>
+      <div class="history-tag" id="historyView">Logs: 0/15</div>
+    </div>
+  </section>
+
+  <section class="panel" id="bottomPanel">
+    <div class="row" style="margin-bottom: 8px; flex-shrink: 0;">
+      <input id="urlInput" type="text" placeholder="URL para monitoramento..." />
+      <button class="action-btn btn-blue" onclick="loadSite()">Abrir Site</button>
+    </div>
+    <iframe id="displayFrame"></iframe>
+  </section>
+
+  <script>
+    let history = [];
+    const MIN_REQUIRED = 15;
+    const EMA_ALPHA = 0.2;        // peso para entradas recentes na EMA
+    const MARKOV_SMOOTH = 0.5;    // suavização de Laplace para evitar zero
+
+    // Frequência exponencial (EMA) por número
+    let ema = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
+
+    // Matriz de transição de Markov: transitions[de][para] = contagem
+    let transitions = {
+      1: { 1: 0, 2: 0, 3: 0, 4: 0 },
+      2: { 1: 0, 2: 0, 3: 0, 4: 0 },
+      3: { 1: 0, 2: 0, 3: 0, 4: 0 },
+      4: { 1: 0, 2: 0, 3: 0, 4: 0 }
+    };
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          alert(`Erro ao tentar modo tela cheia: ${err.message}`);
+        });
+      } else {
+        document.exitFullscreen();
+      }
+    }
+
+    function processInput(n) {
+      // Registra transição de Markov antes de adicionar ao histórico
+      if (history.length > 0) {
+        const prev = history[history.length - 1];
+        transitions[prev][n]++;
+      }
+      history.push(n);
+
+      // Atualiza EMA para cada número
+      [1, 2, 3, 4].forEach(num => {
+        ema[num] = EMA_ALPHA * (num === n ? 1 : 0) + (1 - EMA_ALPHA) * ema[num];
+      });
+
+      updateDisplay();
+      updateBalls();
+    }
+
+    function getMarkovLikelihoods() {
+      // Probabilidade de cada número aparecer com base na transição do último resultado
+      if (history.length === 0) return { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
+      const last = history[history.length - 1];
+      const row = transitions[last];
+      const total = Object.values(row).reduce((a, b) => a + b, 0) + 4 * MARKOV_SMOOTH;
+      let scores = {};
+      [1, 2, 3, 4].forEach(num => {
+        scores[num] = (row[num] + MARKOV_SMOOTH) / total;
+      });
+      return scores;
+    }
+
+    function updateBalls() {
+      const container = document.getElementById("ballsContainer");
+      container.innerHTML = "";
+      history.slice(-10).forEach(num => {
+        const ball = document.createElement("div");
+        ball.className = "num-ball";
+        ball.textContent = num;
+        container.appendChild(ball);
+      });
+    }
+
+    function updateDisplay() {
+      const prediction = document.getElementById("prediction");
+      const historyView = document.getElementById("historyView");
+      const count = history.length;
+
+      if (count < MIN_REQUIRED) {
+        prediction.style.color = "var(--waiting)";
+        prediction.innerHTML = `Faltam ${MIN_REQUIRED - count} entradas...`;
+        historyView.textContent = `Logs: ${count}/${MIN_REQUIRED}`;
+        return;
+      }
+
+      const markov = getMarkovLikelihoods();
+
+      // Pontuação de probabilidade de SAIR para cada número:
+      //   markovScore: probabilidade histórica de seguir o último resultado (padrão sequencial)
+      //   emaScore   : frequência exponencial recente (saiu muito recentemente = provável de sair)
+      const scores = [1, 2, 3, 4].map(num => {
+        const emaScore    = ema[num];
+        const markovScore = markov[num];
+        const likelihood = (markovScore * 0.65) + (emaScore * 0.35);
+        return { num, likelihood };
+      });
+
+      // Ordena crescente: menor likelihood = menos provável de sair = "não vai sair"
+      scores.sort((a, b) => a.likelihood - b.likelihood);
+
+      // Confiança: quão separado o 1º está do 2º (spread relativo)
+      const spread = scores[1].likelihood - scores[0].likelihood;
+      const totalLikelihood = scores.reduce((s, x) => s + x.likelihood, 0);
+      const confidence = Math.min(99, Math.round((spread / totalLikelihood) * 200));
+
+      prediction.style.color = "var(--accent)";
+      prediction.innerHTML =
+        `Não vai sair: <span class="pick-badge num-${scores[0].num}">${scores[0].num}</span> (${confidence}% certeza)`;
+      historyView.textContent = `Total: ${count}`;
+
+      // Apostas derivadas: soma das probabilidades dos números cobertos
+      const L = {};
+      scores.forEach(s => { L[s.num] = s.likelihood; });
+      const bets = [
+        { name: 'Small', p: L[1] + L[2] },
+        { name: 'Big',   p: L[3] + L[4] },
+        { name: 'Odd',   p: L[1] + L[3] },
+        { name: 'Even',  p: L[2] + L[4] },
+      ];
+      bets.sort((a, b) => b.p - a.p);
+      const bestBet = bets[0];
+      const betPct = Math.round(bestBet.p * 100);
+      const betClass = `bet-${bestBet.name.toLowerCase()}`;
+
+      const betEl = document.getElementById("betResult");
+      betEl.style.display = "block";
+      betEl.innerHTML = `Apostar: <span class="pick-badge ${betClass}">${bestBet.name}</span> (${betPct}% certeza)`;
+    }
+
+    function resetEngine() {
+      history = [];
+      ema = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
+      transitions = {
+        1: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        2: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        3: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        4: { 1: 0, 2: 0, 3: 0, 4: 0 }
+      };
+      document.getElementById("ballsContainer").innerHTML = "";
+      document.getElementById("betResult").style.display = "none";
+      updateDisplay();
+    }
+
+    function loadSite() {
+      let url = document.getElementById("urlInput").value.trim();
+      if (url && !/^https?:\/\//i.test(url)) url = "https://" + url;
+      document.getElementById("displayFrame").src = url;
+    }
+
+    document.getElementById("urlInput").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") loadSite();
+    });
+
+    function initFloatingPanel() {
+      const panel = document.getElementById("topPanel");
+      const handle = document.getElementById("dragHandle");
+      let dragging = false;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      handle.addEventListener("pointerdown", (e) => {
+        dragging = true;
+        handle.setPointerCapture(e.pointerId);
+        const rect = panel.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        panel.style.right = "auto";
+      });
+
+      handle.addEventListener("pointermove", (e) => {
+        if (!dragging) return;
+        const panelWidth = panel.offsetWidth;
+        const panelHeight = panel.offsetHeight;
+        const maxLeft = window.innerWidth - panelWidth - 8;
+        const maxTop = window.innerHeight - panelHeight - 8;
+
+        const left = clamp(e.clientX - offsetX, 8, Math.max(8, maxLeft));
+        const top = clamp(e.clientY - offsetY, 8, Math.max(8, maxTop));
+
+        panel.style.left = `${left}px`;
+        panel.style.top = `${top}px`;
+      });
+
+      function stopDragging(e) {
+        if (!dragging) return;
+        dragging = false;
+        if (typeof e.pointerId !== "undefined") {
+          handle.releasePointerCapture(e.pointerId);
+        }
+      }
+
+      handle.addEventListener("pointerup", stopDragging);
+      handle.addEventListener("pointercancel", stopDragging);
+
+      window.addEventListener("resize", () => {
+        const rect = panel.getBoundingClientRect();
+        const maxLeft = Math.max(8, window.innerWidth - rect.width - 8);
+        const maxTop = Math.max(8, window.innerHeight - rect.height - 8);
+        panel.style.left = `${clamp(rect.left, 8, maxLeft)}px`;
+        panel.style.top = `${clamp(rect.top, 8, maxTop)}px`;
+      });
+    }
+
+    initFloatingPanel();
+  </script>
+</body>
+</html>
+
