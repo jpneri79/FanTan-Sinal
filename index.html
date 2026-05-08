@@ -122,6 +122,57 @@
     .bet-odd { background: #8854d0; }
     .bet-even { background: #0fb9b1; }
 
+    .history-toggle-row {
+      margin-top: 6px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .history-toggle-btn {
+      border: 0;
+      border-radius: 8px;
+      background: #34495e;
+      color: #fff;
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    #suggestionSummary {
+      font-size: 12px;
+      color: #57606f;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    #suggestionHistoryPanel {
+      margin-top: 6px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.95);
+      padding: 8px;
+      max-height: 120px;
+      overflow-y: auto;
+      display: none;
+      font-size: 12px;
+    }
+
+    .history-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 0;
+      border-bottom: 1px dashed rgba(0,0,0,0.08);
+    }
+
+    .history-row:last-child { border-bottom: 0; }
+    .ok { color: #1e8449; font-weight: 700; }
+    .bad { color: #c0392b; font-weight: 700; }
+
     iframe {
       width: 100%;
       border: 1px solid var(--line);
@@ -186,6 +237,12 @@
       <div id="betResult" style="font-size:15px; font-weight:bold; color: var(--accent-2); display:none;"></div>
       <div class="history-tag" id="historyView">Logs: 0/15</div>
     </div>
+
+    <div class="history-toggle-row">
+      <button class="history-toggle-btn" onclick="toggleSuggestionHistory()">Histórico V/D</button>
+      <div id="suggestionSummary">Sem sugestões avaliadas ainda.</div>
+    </div>
+    <div id="suggestionHistoryPanel"></div>
   </section>
 
   <section class="panel" id="bottomPanel">
@@ -213,6 +270,16 @@
       4: { 1: 0, 2: 0, 3: 0, 4: 0 }
     };
 
+    let pendingSuggestion = null;
+    let suggestionStats = {
+      rounds: 0,
+      avoidWins: 0,
+      avoidLosses: 0,
+      betWins: 0,
+      betLosses: 0,
+      items: []
+    };
+
     function toggleFullscreen() {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
@@ -224,6 +291,11 @@
     }
 
     function processInput(n) {
+      // Avalia a sugestão da rodada anterior usando o resultado atual.
+      if (pendingSuggestion) {
+        registerSuggestionOutcome(n);
+      }
+
       // Registra transição de Markov antes de adicionar ao histórico
       if (history.length > 0) {
         const prev = history[history.length - 1];
@@ -238,6 +310,67 @@
 
       updateDisplay();
       updateBalls();
+    }
+
+    function doesBetWin(betName, result) {
+      if (betName === "Small") return result === 1 || result === 2;
+      if (betName === "Big") return result === 3 || result === 4;
+      if (betName === "Odd") return result === 1 || result === 3;
+      return result === 2 || result === 4;
+    }
+
+    function registerSuggestionOutcome(result) {
+      const avoidWin = result !== pendingSuggestion.avoidNum;
+      const betWin = doesBetWin(pendingSuggestion.betName, result);
+
+      suggestionStats.rounds++;
+      if (avoidWin) suggestionStats.avoidWins++; else suggestionStats.avoidLosses++;
+      if (betWin) suggestionStats.betWins++; else suggestionStats.betLosses++;
+
+      suggestionStats.items.unshift({
+        round: suggestionStats.rounds,
+        result,
+        avoidNum: pendingSuggestion.avoidNum,
+        betName: pendingSuggestion.betName,
+        avoidWin,
+        betWin
+      });
+
+      suggestionStats.items = suggestionStats.items.slice(0, 20);
+      pendingSuggestion = null;
+      renderSuggestionHistory();
+    }
+
+    function renderSuggestionHistory() {
+      const summaryEl = document.getElementById("suggestionSummary");
+      const panelEl = document.getElementById("suggestionHistoryPanel");
+
+      if (suggestionStats.rounds === 0) {
+        summaryEl.textContent = "Sem sugestões avaliadas ainda.";
+        panelEl.innerHTML = "";
+        return;
+      }
+
+      const avoidRate = Math.round((suggestionStats.avoidWins / suggestionStats.rounds) * 100);
+      const betRate = Math.round((suggestionStats.betWins / suggestionStats.rounds) * 100);
+      summaryEl.textContent = `Não sair: ${suggestionStats.avoidWins}V/${suggestionStats.avoidLosses}D (${avoidRate}%) | Apostar: ${suggestionStats.betWins}V/${suggestionStats.betLosses}D (${betRate}%)`;
+
+      panelEl.innerHTML = suggestionStats.items.map(item => {
+        const avoidClass = item.avoidWin ? "ok" : "bad";
+        const betClass = item.betWin ? "ok" : "bad";
+        return `
+          <div class="history-row">
+            <span>#${item.round} saiu ${item.result}</span>
+            <span>Não sair ${item.avoidNum}: <span class="${avoidClass}">${item.avoidWin ? "V" : "D"}</span></span>
+            <span>${item.betName}: <span class="${betClass}">${item.betWin ? "V" : "D"}</span></span>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function toggleSuggestionHistory() {
+      const panelEl = document.getElementById("suggestionHistoryPanel");
+      panelEl.style.display = panelEl.style.display === "block" ? "none" : "block";
     }
 
     function getMarkovLikelihoods() {
@@ -273,6 +406,7 @@
         prediction.style.color = "var(--waiting)";
         prediction.innerHTML = `Faltam ${MIN_REQUIRED - count} entradas...`;
         historyView.textContent = `Logs: ${count}/${MIN_REQUIRED}`;
+        pendingSuggestion = null;
         return;
       }
 
@@ -296,9 +430,17 @@
       const totalLikelihood = scores.reduce((s, x) => s + x.likelihood, 0);
       const confidence = Math.min(99, Math.round((spread / totalLikelihood) * 200));
 
-      prediction.style.color = "var(--accent)";
-      prediction.innerHTML =
-        `Não vai sair: <span class="pick-badge num-${scores[0].num}">${scores[0].num}</span> (${confidence}% certeza)`;
+      const betEl = document.getElementById("betResult");
+
+      // Filtro: só mostra "Não vai sair" se certeza >= 10%
+      if (confidence >= 10) {
+        prediction.style.color = "var(--accent)";
+        prediction.innerHTML =
+          `Não vai sair: <span class="pick-badge num-${scores[0].num}">${scores[0].num}</span> (${confidence}% certeza)`;
+      } else {
+        prediction.style.color = "var(--waiting)";
+        prediction.innerHTML = `Sinal fraco (${confidence}% — aguardando...)`;
+      }
       historyView.textContent = `Total: ${count}`;
 
       // Apostas derivadas: soma das probabilidades dos números cobertos
@@ -315,9 +457,22 @@
       const betPct = Math.round(bestBet.p * 100);
       const betClass = `bet-${bestBet.name.toLowerCase()}`;
 
-      const betEl = document.getElementById("betResult");
-      betEl.style.display = "block";
-      betEl.innerHTML = `Apostar: <span class="pick-badge ${betClass}">${bestBet.name}</span> (${betPct}% certeza)`;
+      // Filtro: só mostra aposta se betPct >= 62%
+      if (betPct >= 62) {
+        betEl.style.display = "block";
+        betEl.innerHTML = `Apostar: <span class="pick-badge ${betClass}">${bestBet.name}</span> (${betPct}% certeza)`;
+      } else {
+        betEl.style.display = "block";
+        betEl.innerHTML = `Apostar: <span style="color:var(--waiting)">sinal fraco (${betPct}%)</span>`;
+      }
+
+      // A sugestão gerada agora será avaliada quando chegar o próximo resultado.
+      pendingSuggestion = {
+        avoidNum: scores[0].num,
+        betName: bestBet.name,
+        avoidConf: confidence,
+        betPct: betPct
+      };
     }
 
     function resetEngine() {
@@ -329,8 +484,19 @@
         3: { 1: 0, 2: 0, 3: 0, 4: 0 },
         4: { 1: 0, 2: 0, 3: 0, 4: 0 }
       };
+      pendingSuggestion = null;
+      suggestionStats = {
+        rounds: 0,
+        avoidWins: 0,
+        avoidLosses: 0,
+        betWins: 0,
+        betLosses: 0,
+        items: []
+      };
       document.getElementById("ballsContainer").innerHTML = "";
       document.getElementById("betResult").style.display = "none";
+      document.getElementById("suggestionHistoryPanel").style.display = "none";
+      renderSuggestionHistory();
       updateDisplay();
     }
 
@@ -399,6 +565,7 @@
     }
 
     initFloatingPanel();
+    renderSuggestionHistory();
   </script>
 </body>
 </html>
