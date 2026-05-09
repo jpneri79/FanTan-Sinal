@@ -432,8 +432,8 @@
 
       const betEl = document.getElementById("betResult");
 
-      // Filtro: só mostra "Não vai sair" se certeza >= 10%
-      if (confidence >= 10) {
+      // Filtro: só mostra "Não vai sair" se certeza >= 5%
+      if (confidence >= 5) {
         prediction.style.color = "var(--accent)";
         prediction.innerHTML =
           `Não vai sair: <span class="pick-badge num-${scores[0].num}">${scores[0].num}</span> (${confidence}% certeza)`;
