@@ -356,6 +356,8 @@
         result,
         avoidNum: pendingSuggestion.avoidNum,
         betName: pendingSuggestion.betName,
+        avoidConf: pendingSuggestion.avoidConf,
+        betPct: pendingSuggestion.betPct,
         avoidTracked,
         betTracked,
         avoidWin,
@@ -388,6 +390,8 @@
       panelEl.innerHTML = suggestionStats.items.map(item => {
         const avoidClass = item.avoidTracked ? (item.avoidWin ? "ok" : "bad") : "";
         const betClass = item.betTracked ? (item.betWin ? "ok" : "bad") : "";
+        const avoidPct = typeof item.avoidConf === "number" ? `${item.avoidConf}%` : "-";
+        const betPctLabel = typeof item.betPct === "number" ? `${item.betPct}%` : "-";
         const avoidLabel = item.avoidTracked
           ? `<span class="${avoidClass}">${item.avoidWin ? "V" : "D"}</span>`
           : `<span>-</span>`;
@@ -397,8 +401,8 @@
         return `
           <div class="history-row">
             <span>#${item.round} saiu ${item.result}</span>
-            <span>Não sair ${item.avoidNum}: ${avoidLabel}</span>
-            <span>${item.betName}: ${betLabel}</span>
+            <span>Não sair ${item.avoidNum} (${avoidPct}): ${avoidLabel}</span>
+            <span>${item.betName} (${betPctLabel}): ${betLabel}</span>
           </div>
         `;
       }).join("");
