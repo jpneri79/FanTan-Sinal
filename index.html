@@ -64,6 +64,7 @@
     .btn-blue { background: var(--accent-2); }
     .btn-clear { background: #b33939; }
     .btn-fullscreen { background: #4b4b4b; }
+    .btn-undo { background: #8e44ad; }
 
     .neural-status {
       display: flex;
@@ -78,9 +79,22 @@
     .last-numbers-row {
       display: flex;
       gap: 6px;
-      margin: 8px 0;
       justify-content: center;
       flex-wrap: wrap;
+      flex: 1;
+      margin: 0;
+    }
+
+    .last-numbers-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+    }
+
+    .btn-undo-side {
+      padding: 8px 12px;
+      flex-shrink: 0;
     }
 
     .num-ball {
@@ -242,7 +256,10 @@
       <button class="action-btn btn-clear" onclick="resetEngine()">Reset</button>
     </div>
 
-    <div class="last-numbers-row" id="ballsContainer"></div>
+    <div class="last-numbers-wrap">
+      <div class="last-numbers-row" id="ballsContainer"></div>
+      <button class="action-btn btn-undo btn-undo-side" onclick="undoLastInput()">Desfazer</button>
+    </div>
     
     <div class="neural-status">
       <div id="prediction">Aguardando dados (mínimo 15)...</div>
@@ -285,6 +302,7 @@
     };
 
     let pendingSuggestion = null;
+    let undoStack = [];
     let suggestionStats = {
       rounds: 0,
       avoidRounds: 0,
@@ -307,6 +325,8 @@
     }
 
     function processInput(n) {
+      saveStateForUndo();
+
       // Avalia a sugestão da rodada anterior usando o resultado atual.
       if (pendingSuggestion) {
         registerSuggestionOutcome(n);
@@ -326,6 +346,35 @@
 
       updateDisplay();
       updateBalls();
+    }
+
+    function saveStateForUndo() {
+      const snapshot = {
+        history: [...history],
+        ema: { ...ema },
+        transitions: JSON.parse(JSON.stringify(transitions)),
+        pendingSuggestion: pendingSuggestion ? { ...pendingSuggestion } : null,
+        suggestionStats: JSON.parse(JSON.stringify(suggestionStats))
+      };
+      undoStack.push(snapshot);
+      if (undoStack.length > 500) undoStack.shift();
+    }
+
+    function restoreState(snapshot) {
+      history = [...snapshot.history];
+      ema = { ...snapshot.ema };
+      transitions = JSON.parse(JSON.stringify(snapshot.transitions));
+      pendingSuggestion = snapshot.pendingSuggestion ? { ...snapshot.pendingSuggestion } : null;
+      suggestionStats = JSON.parse(JSON.stringify(snapshot.suggestionStats));
+    }
+
+    function undoLastInput() {
+      if (undoStack.length === 0) return;
+      const snapshot = undoStack.pop();
+      restoreState(snapshot);
+      updateBalls();
+      renderSuggestionHistory();
+      updateDisplay();
     }
 
     function doesBetWin(betName, result) {
@@ -465,11 +514,13 @@
     function updateDisplay() {
       const prediction = document.getElementById("prediction");
       const historyView = document.getElementById("historyView");
+      const betEl = document.getElementById("betResult");
       const count = history.length;
 
       if (count < MIN_REQUIRED) {
         prediction.style.color = "var(--waiting)";
         prediction.innerHTML = `Faltam ${MIN_REQUIRED - count} entradas...`;
+        betEl.style.display = "none";
         historyView.textContent = `Logs: ${count}/${MIN_REQUIRED}`;
         pendingSuggestion = null;
         return;
@@ -496,8 +547,6 @@
       const confidence = Math.min(99, Math.round((spread / totalLikelihood) * 200));
       const hasStrongAvoidSignal = confidence >= 5;
       const avoidGaleLabel = getGaleLabel("avoid", MAX_GALES_AVOID);
-
-      const betEl = document.getElementById("betResult");
 
       // Filtro: só mostra "Não vai sair" se certeza >= 5%
       if (hasStrongAvoidSignal) {
@@ -550,6 +599,7 @@
 
     function resetEngine() {
       history = [];
+      undoStack = [];
       ema = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
       transitions = {
         1: { 1: 0, 2: 0, 3: 0, 4: 0 },
