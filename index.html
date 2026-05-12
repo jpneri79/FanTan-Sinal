@@ -503,7 +503,7 @@
     function updateBalls() {
       const container = document.getElementById("ballsContainer");
       container.innerHTML = "";
-      history.slice(-10).forEach(num => {
+      history.slice(-7).forEach(num => {
         const ball = document.createElement("div");
         ball.className = "num-ball";
         ball.textContent = num;
