@@ -284,6 +284,7 @@
 
   <script>
     let history = [];
+    const MAX_HISTORY = 20;
     const MIN_REQUIRED = 15;
     const EMA_ALPHA = 0.2;        // peso para entradas recentes na EMA
     const MARKOV_SMOOTH = 0.5;    // suavização de Laplace para evitar zero
@@ -332,20 +333,37 @@
         registerSuggestionOutcome(n);
       }
 
-      // Registra transição de Markov antes de adicionar ao histórico
-      if (history.length > 0) {
-        const prev = history[history.length - 1];
-        transitions[prev][n]++;
-      }
       history.push(n);
+      if (history.length > MAX_HISTORY) {
+        history.shift();
+      }
 
-      // Atualiza EMA para cada número
-      [1, 2, 3, 4].forEach(num => {
-        ema[num] = EMA_ALPHA * (num === n ? 1 : 0) + (1 - EMA_ALPHA) * ema[num];
-      });
+      // Recalcula os modelos somente com a janela ativa do histórico (máx. 20).
+      recomputeModelsFromHistory();
 
       updateDisplay();
       updateBalls();
+    }
+
+    function recomputeModelsFromHistory() {
+      ema = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
+      transitions = {
+        1: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        2: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        3: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        4: { 1: 0, 2: 0, 3: 0, 4: 0 }
+      };
+
+      history.forEach((num, index) => {
+        [1, 2, 3, 4].forEach(baseNum => {
+          ema[baseNum] = EMA_ALPHA * (baseNum === num ? 1 : 0) + (1 - EMA_ALPHA) * ema[baseNum];
+        });
+
+        if (index > 0) {
+          const prev = history[index - 1];
+          transitions[prev][num]++;
+        }
+      });
     }
 
     function saveStateForUndo() {
@@ -521,7 +539,7 @@
         prediction.style.color = "var(--waiting)";
         prediction.innerHTML = `Faltam ${MIN_REQUIRED - count} entradas...`;
         betEl.style.display = "none";
-        historyView.textContent = `Logs: ${count}/${MIN_REQUIRED}`;
+        historyView.textContent = `Janela: ${count}/${MAX_HISTORY}`;
         pendingSuggestion = null;
         return;
       }
@@ -557,7 +575,7 @@
         prediction.style.color = "var(--accent)";
         prediction.innerHTML = `Não vai sair: <span style="color:var(--waiting)">Analisando...</span> ${formatGaleTag(avoidGaleLabel)}`;
       }
-      historyView.textContent = `Total: ${count}`;
+      historyView.textContent = `Janela: ${count}/${MAX_HISTORY}`;
 
       // Apostas derivadas: soma das probabilidades dos números cobertos
       const L = {};
