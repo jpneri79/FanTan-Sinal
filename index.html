@@ -211,31 +211,6 @@
 
     input { flex: 1; border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
 
-    .ws-import-wrap {
-      margin-top: 8px;
-      display: flex;
-      gap: 8px;
-      align-items: flex-start;
-    }
-
-    #wsInput {
-      flex: 1;
-      min-height: 72px;
-      max-height: 120px;
-      resize: vertical;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 8px;
-      font-family: Consolas, 'Courier New', monospace;
-      font-size: 12px;
-    }
-
-    .btn-import {
-      background: #16a085;
-      align-self: stretch;
-      min-width: 120px;
-    }
-
       #topPanel {
         position: fixed;
         top: 8px;
@@ -304,17 +279,12 @@
       <input id="urlInput" type="text" placeholder="URL para monitoramento..." />
       <button class="action-btn btn-blue" onclick="loadSite()">Abrir Site</button>
     </div>
-    <div class="ws-import-wrap" style="flex-shrink: 0;">
-      <textarea id="wsInput" placeholder="Cole aqui a mensagem completa do websocket (fantan.table) e clique em Importar WS..."></textarea>
-      <button class="action-btn btn-import" onclick="importWebsocketHistory()">Importar WS</button>
-    </div>
     <iframe id="displayFrame"></iframe>
   </section>
 
   <script>
     let history = [];
     const MIN_REQUIRED = 15;
-    const MAX_HISTORY = 30;
     const EMA_ALPHA = 0.2;        // peso para entradas recentes na EMA
     const MARKOV_SMOOTH = 0.5;    // suavização de Laplace para evitar zero
     const MAX_GALES_AVOID = 2;
@@ -344,19 +314,6 @@
       items: []
     };
 
-    function createEmptySuggestionStats() {
-      return {
-        rounds: 0,
-        avoidRounds: 0,
-        betRounds: 0,
-        avoidWins: 0,
-        avoidLosses: 0,
-        betWins: 0,
-        betLosses: 0,
-        items: []
-      };
-    }
-
     function toggleFullscreen() {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
@@ -367,31 +324,28 @@
       }
     }
 
-    function processInput(n, options = {}) {
-      const skipUndo = !!options.skipUndo;
-      const skipRender = !!options.skipRender;
-
-      if (!skipUndo) {
-        saveStateForUndo();
-      }
+    function processInput(n) {
+      saveStateForUndo();
 
       // Avalia a sugestão da rodada anterior usando o resultado atual.
       if (pendingSuggestion) {
-        registerSuggestionOutcome(n, { skipRender });
+        registerSuggestionOutcome(n);
       }
 
+      // Registra transição de Markov antes de adicionar ao histórico
+      if (history.length > 0) {
+        const prev = history[history.length - 1];
+        transitions[prev][n]++;
+      }
       history.push(n);
-      trimHistoryToMax();
-      rebuildModelFromHistory();
 
-      if (skipRender) {
-        pendingSuggestion = getPendingSuggestion(false);
-      }
+      // Atualiza EMA para cada número
+      [1, 2, 3, 4].forEach(num => {
+        ema[num] = EMA_ALPHA * (num === n ? 1 : 0) + (1 - EMA_ALPHA) * ema[num];
+      });
 
-      if (!skipRender) {
-        updateDisplay();
-        updateBalls();
-      }
+      updateDisplay();
+      updateBalls();
     }
 
     function saveStateForUndo() {
@@ -412,100 +366,6 @@
       transitions = JSON.parse(JSON.stringify(snapshot.transitions));
       pendingSuggestion = snapshot.pendingSuggestion ? { ...snapshot.pendingSuggestion } : null;
       suggestionStats = JSON.parse(JSON.stringify(snapshot.suggestionStats));
-      trimHistoryToMax();
-      rebuildModelFromHistory();
-    }
-
-    function trimHistoryToMax() {
-      if (history.length <= MAX_HISTORY) return;
-      history = history.slice(-MAX_HISTORY);
-    }
-
-    function rebuildModelFromHistory() {
-      ema = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
-      transitions = {
-        1: { 1: 0, 2: 0, 3: 0, 4: 0 },
-        2: { 1: 0, 2: 0, 3: 0, 4: 0 },
-        3: { 1: 0, 2: 0, 3: 0, 4: 0 },
-        4: { 1: 0, 2: 0, 3: 0, 4: 0 }
-      };
-
-      for (let i = 0; i < history.length; i++) {
-        const current = history[i];
-        if (i > 0) {
-          const prev = history[i - 1];
-          transitions[prev][current]++;
-        }
-
-        [1, 2, 3, 4].forEach(num => {
-          ema[num] = EMA_ALPHA * (num === current ? 1 : 0) + (1 - EMA_ALPHA) * ema[num];
-        });
-      }
-    }
-
-    function parseWsPayload(raw) {
-      const text = String(raw || "").trim();
-      if (!text) throw new Error("Cole uma mensagem de websocket antes de importar.");
-
-      try {
-        let parsed = JSON.parse(text);
-        if (typeof parsed === "string") parsed = JSON.parse(parsed);
-        return parsed;
-      } catch (_err) {
-        // Fallback para casos em que apenas o trecho history foi copiado com formato irregular.
-        const match = text.match(/"history"\s*:\s*(\[[\s\S]*?\])/);
-        if (!match) {
-          throw new Error("Nao foi possivel ler o JSON da mensagem websocket.");
-        }
-        return { args: { history: JSON.parse(match[1]) } };
-      }
-    }
-
-    function importWebsocketHistory() {
-      const wsInput = document.getElementById("wsInput");
-
-      try {
-        const payload = parseWsPayload(wsInput.value);
-        const rawHistory = (payload && payload.args && Array.isArray(payload.args.history))
-          ? payload.args.history
-          : (Array.isArray(payload.history) ? payload.history : null);
-
-        if (!rawHistory) {
-          throw new Error("Campo history nao encontrado na mensagem.");
-        }
-
-        // O websocket costuma vir do mais recente para o mais antigo.
-        // Inverte para manter o historico interno em ordem cronologica: antigo -> recente.
-        const parsedHistory = rawHistory
-          .map(v => Number(v))
-          .filter(v => Number.isInteger(v) && v >= 1 && v <= 4)
-          .reverse();
-
-        if (parsedHistory.length === 0) {
-          throw new Error("Nenhum numero valido (1 a 4) encontrado em history.");
-        }
-
-        saveStateForUndo();
-        const importedHistory = parsedHistory.slice(-MAX_HISTORY);
-
-        history = [];
-        pendingSuggestion = null;
-        rebuildModelFromHistory();
-        suggestionStats = createEmptySuggestionStats();
-
-        // Reprocessa o historico em ordem para gerar V/D automaticamente
-        // a partir da 16a entrada (15 rodadas quando vierem 30 numeros).
-        importedHistory.forEach(num => {
-          processInput(num, { skipUndo: true, skipRender: true });
-        });
-
-        updateBalls();
-        renderSuggestionHistory();
-        updateDisplay();
-        wsInput.value = "";
-      } catch (err) {
-        alert(err.message || "Falha ao importar mensagem websocket.");
-      }
     }
 
     function undoLastInput() {
@@ -524,8 +384,7 @@
       return result === 2 || result === 4;
     }
 
-    function registerSuggestionOutcome(result, options = {}) {
-      const skipRender = !!options.skipRender;
+    function registerSuggestionOutcome(result) {
       const avoidTracked = !!pendingSuggestion.trackAvoid;
       const betTracked = !!pendingSuggestion.trackBet;
       const avoidWin = avoidTracked ? (result !== pendingSuggestion.avoidNum) : null;
@@ -556,9 +415,7 @@
 
       suggestionStats.items = suggestionStats.items.slice(0, 20);
       pendingSuggestion = null;
-      if (!skipRender) {
-        renderSuggestionHistory();
-      }
+      renderSuggestionHistory();
     }
 
     function renderSuggestionHistory() {
@@ -643,63 +500,6 @@
       return scores;
     }
 
-    function buildSuggestionFromModel() {
-      if (history.length < MIN_REQUIRED) return null;
-
-      const markov = getMarkovLikelihoods();
-      const scores = [1, 2, 3, 4].map(num => {
-        const emaScore = ema[num];
-        const markovScore = markov[num];
-        const likelihood = (markovScore * 0.65) + (emaScore * 0.35);
-        return { num, likelihood };
-      });
-      scores.sort((a, b) => a.likelihood - b.likelihood);
-
-      const spread = scores[1].likelihood - scores[0].likelihood;
-      const totalLikelihood = scores.reduce((s, x) => s + x.likelihood, 0);
-      const confidence = Math.min(99, Math.round((spread / totalLikelihood) * 200));
-      const hasStrongAvoidSignal = confidence >= 5;
-
-      const L = {};
-      scores.forEach(s => { L[s.num] = s.likelihood; });
-      const bets = [
-        { name: 'Small', p: L[1] + L[2] },
-        { name: 'Big',   p: L[3] + L[4] },
-        { name: 'Odd',   p: L[1] + L[3] },
-        { name: 'Even',  p: L[2] + L[4] },
-      ];
-      bets.sort((a, b) => b.p - a.p);
-      const bestBet = bets[0];
-      const betPct = Math.round(bestBet.p * 100);
-      const hasStrongBetSignal = betPct >= 62;
-
-      return {
-        avoidNum: scores[0].num,
-        betName: bestBet.name,
-        avoidConf: confidence,
-        betPct,
-        hasStrongAvoidSignal,
-        hasStrongBetSignal
-      };
-    }
-
-    function getPendingSuggestion(forceTrack = false) {
-      const base = buildSuggestionFromModel();
-      if (!base) return null;
-
-      const shouldTrack = forceTrack || base.hasStrongAvoidSignal || base.hasStrongBetSignal;
-      if (!shouldTrack) return null;
-
-      return {
-        avoidNum: base.avoidNum,
-        betName: base.betName,
-        avoidConf: base.avoidConf,
-        betPct: base.betPct,
-        trackAvoid: forceTrack ? true : base.hasStrongAvoidSignal,
-        trackBet: forceTrack ? true : base.hasStrongBetSignal
-      };
-    }
-
     function updateBalls() {
       const container = document.getElementById("ballsContainer");
       container.innerHTML = "";
@@ -721,49 +521,103 @@
         prediction.style.color = "var(--waiting)";
         prediction.innerHTML = `Faltam ${MIN_REQUIRED - count} entradas...`;
         betEl.style.display = "none";
-        historyView.textContent = `Logs: ${count}/${MIN_REQUIRED} | Janela: ${MAX_HISTORY}`;
+        historyView.textContent = `Logs: ${count}/${MIN_REQUIRED}`;
         pendingSuggestion = null;
         return;
       }
 
-      const modelSuggestion = buildSuggestionFromModel();
-      const hasStrongAvoidSignal = modelSuggestion.hasStrongAvoidSignal;
+      const markov = getMarkovLikelihoods();
+
+      // Pontuação de probabilidade de SAIR para cada número:
+      //   markovScore: probabilidade histórica de seguir o último resultado (padrão sequencial)
+      //   emaScore   : frequência exponencial recente (saiu muito recentemente = provável de sair)
+      const scores = [1, 2, 3, 4].map(num => {
+        const emaScore    = ema[num];
+        const markovScore = markov[num];
+        const likelihood = (markovScore * 0.65) + (emaScore * 0.35);
+        return { num, likelihood };
+      });
+
+      // Ordena crescente: menor likelihood = menos provável de sair = "não vai sair"
+      scores.sort((a, b) => a.likelihood - b.likelihood);
+
+      // Confiança: quão separado o 1º está do 2º (spread relativo)
+      const spread = scores[1].likelihood - scores[0].likelihood;
+      const totalLikelihood = scores.reduce((s, x) => s + x.likelihood, 0);
+      const confidence = Math.min(99, Math.round((spread / totalLikelihood) * 200));
+      const hasStrongAvoidSignal = confidence >= 5;
       const avoidGaleLabel = getGaleLabel("avoid", MAX_GALES_AVOID);
 
       // Filtro: só mostra "Não vai sair" se certeza >= 5%
       if (hasStrongAvoidSignal) {
         prediction.style.color = "var(--accent)";
         prediction.innerHTML =
-          `Não vai sair: <span class="pick-badge num-${modelSuggestion.avoidNum}">${modelSuggestion.avoidNum}</span> (${modelSuggestion.avoidConf}%) ${formatGaleTag(avoidGaleLabel)}`;
+          `Não vai sair: <span class="pick-badge num-${scores[0].num}">${scores[0].num}</span> (${confidence}%) ${formatGaleTag(avoidGaleLabel)}`;
       } else {
         prediction.style.color = "var(--accent)";
         prediction.innerHTML = `Não vai sair: <span style="color:var(--waiting)">Analisando...</span> ${formatGaleTag(avoidGaleLabel)}`;
       }
-      historyView.textContent = `Total: ${count}/${MAX_HISTORY}`;
+      historyView.textContent = `Total: ${count}`;
 
-      const betClass = `bet-${modelSuggestion.betName.toLowerCase()}`;
-      const hasStrongBetSignal = modelSuggestion.hasStrongBetSignal;
+      // Apostas derivadas: soma das probabilidades dos números cobertos
+      const L = {};
+      scores.forEach(s => { L[s.num] = s.likelihood; });
+      const bets = [
+        { name: 'Small', p: L[1] + L[2] },
+        { name: 'Big',   p: L[3] + L[4] },
+        { name: 'Odd',   p: L[1] + L[3] },
+        { name: 'Even',  p: L[2] + L[4] },
+      ];
+      bets.sort((a, b) => b.p - a.p);
+      const bestBet = bets[0];
+      const betPct = Math.round(bestBet.p * 100);
+      const betClass = `bet-${bestBet.name.toLowerCase()}`;
+      const hasStrongBetSignal = betPct >= 62;
       const betGaleLabel = getGaleLabel("bet", MAX_GALES_BET);
 
       // Filtro: só mostra aposta se betPct >= 62%
       if (hasStrongBetSignal) {
         betEl.style.display = "block";
-        betEl.innerHTML = `Apostar: <span class="pick-badge ${betClass}">${modelSuggestion.betName}</span> (${modelSuggestion.betPct}%) ${formatGaleTag(betGaleLabel)}`;
+        betEl.innerHTML = `Apostar: <span class="pick-badge ${betClass}">${bestBet.name}</span> (${betPct}%) ${formatGaleTag(betGaleLabel)}`;
       } else {
         betEl.style.display = "block";
         betEl.innerHTML = `Apostar: <span style="color:var(--waiting)">Analisando...</span> ${formatGaleTag(betGaleLabel)}`;
       }
 
       // Registra separadamente: cada sinal conta no histórico quando passa no próprio filtro.
-      pendingSuggestion = getPendingSuggestion(false);
+      pendingSuggestion = (hasStrongAvoidSignal || hasStrongBetSignal)
+        ? {
+            avoidNum: scores[0].num,
+            betName: bestBet.name,
+            avoidConf: confidence,
+            betPct: betPct,
+            trackAvoid: hasStrongAvoidSignal,
+            trackBet: hasStrongBetSignal
+          }
+        : null;
     }
 
     function resetEngine() {
       history = [];
       undoStack = [];
-      rebuildModelFromHistory();
+      ema = { 1: 0.25, 2: 0.25, 3: 0.25, 4: 0.25 };
+      transitions = {
+        1: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        2: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        3: { 1: 0, 2: 0, 3: 0, 4: 0 },
+        4: { 1: 0, 2: 0, 3: 0, 4: 0 }
+      };
       pendingSuggestion = null;
-      suggestionStats = createEmptySuggestionStats();
+      suggestionStats = {
+        rounds: 0,
+        avoidRounds: 0,
+        betRounds: 0,
+        avoidWins: 0,
+        avoidLosses: 0,
+        betWins: 0,
+        betLosses: 0,
+        items: []
+      };
       document.getElementById("ballsContainer").innerHTML = "";
       document.getElementById("betResult").style.display = "none";
       document.getElementById("suggestionHistoryPanel").style.display = "none";
